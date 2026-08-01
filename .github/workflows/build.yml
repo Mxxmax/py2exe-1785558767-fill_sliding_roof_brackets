@@ -1,0 +1,48 @@
+# GitHub Actions: Build .py → .exe via PyInstaller
+name: Build EXE
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install lxml openpyxl et_xmlfile pyinstaller
+
+      - name: Build EXE with PyInstaller
+        run: |
+          $files = Get-ChildItem "$env:GITHUB_WORKSPACE" -Filter *.py -Recurse `
+            | Where-Object { $_.Name -ne "setup.py" -and $_.Name -ne "gen_spec.py" }
+          foreach ($f in $files) {
+            $name = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            pyinstaller --onefile --name "$name" `
+              --collect-all lxml --collect-all openpyxl --collect-all et_xmlfile `
+              --hidden-import lxml.etree --hidden-import lxml._elementpath `
+              --exclude-module IPython --exclude-module pandas `
+              --exclude-module scipy --exclude-module sklearn `
+              --exclude-module tensorflow --exclude-module torch `
+              --exclude-module matplotlib --exclude-module numpy `
+              --exclude-module PIL --exclude-module Pillow `
+              $f.FullName
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-exe
+          path: dist\*.exe
+          if-no-files-found: error
